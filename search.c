@@ -3,6 +3,8 @@
 #include<stdlib.h>
 #include<unistd.h>
 #include<ctype.h>
+#include<limits.h>
+#include<errno.h>
 
 #include "search.h"
 #include "lib.h"
@@ -31,7 +33,7 @@ char ignore_words[NO_OF_IGNORE_WORDS][ARTICLE_NAME_SIZE] = {
 "the", "then", "to","that", "they", "them", "there","their", "this", "these","theirs","those","themselves",
 "u",
 "v",
-"w", "was","what", "when", "why", "were", "will", "we", "would", "with", "who","whose",
+"w", "was","what", "when", "why", "were", "will", "we", "would", "with", "who","whose", "which",
 "x",
 "yet","you", "your","yours","yourself","yourselves",
 "z",
@@ -44,7 +46,30 @@ article* article_obj = NULL;
 unsigned int no_of_articles = 0;
 
 /* Head node of the hash table */
-key_alias_word_info* key_head = NULL;
+key_alias_word_info  key_head[HASH_SIZE] = {0};
+
+/* Initializing the structure array to the default values */
+void initialize_key_head()
+{
+  for(int i=0; i<HASH_SIZE ; i++)
+  {
+    key_head[i].key_info = INVALID_KEY_INFO;
+    key_head[i].value_info = NULL;
+    key_head[i].next = NULL;
+  }
+
+}
+
+/* Set the key info */
+void set_key_head(unsigned int key)
+{
+  key_head[key].key_info = key;
+}
+
+unsigned int get_key_head(unsigned int key)
+{
+  return key_head[key].key_info; 
+}
 
 /* Dynamically read number of articles present in ./articles dir */
 int get_no_of_articles()
@@ -54,6 +79,11 @@ int get_no_of_articles()
 
   system("ls articles | wc -l > /tmp/no_of_articles.txt" );
   fp = fopen("/tmp/no_of_articles.txt", "r");
+  if(NULL == fp)
+  {
+    printf("\n file pointer is null %d", errno);
+    return 0;
+  }
   fscanf(fp, "%u", &no_of_articles );
 
   printf("\nNo of Articles present are: %u\n", no_of_articles);
@@ -67,6 +97,11 @@ void allocate_articles()
 {
   
   article_obj = (article *) calloc(sizeof(article),  no_of_articles );
+  if(NULL == article_obj)
+  {
+    printf("Could not allocate the articles object \n");
+    exit(0);
+  }
 }
 
 void set_article_obj()
@@ -76,6 +111,12 @@ void set_article_obj()
 
   system("ls articles > /tmp/name_of_articles.txt");
   fp = fopen("/tmp/name_of_articles.txt", "r");
+
+  if(NULL == fp)
+  {
+    printf("\n file pointer is null %d", errno);
+    return;
+  }
 
   printf("\nThe articles present are:\n");
   for(i=0; i<no_of_articles; i++)
@@ -90,30 +131,59 @@ article* get_article_obj()
   return article_obj;
 }
 
-key_alias_word_info* allocate_key()
-{
-  key_alias_word_info* key = (key_alias_word_info*) calloc (sizeof(key_alias_word_info), 1);
-  if(NULL == key)
-  {
-    perror("could not allocate memory");
-    exit(0);
-  }
-  key->value_info = NULL;
-  key->next = NULL;
-  return key;
-}
-
 value_alias_article_info* allocate_value()
 {
   value_alias_article_info* value = (value_alias_article_info *) calloc (sizeof(value_alias_article_info), 1);
   if(NULL == value)
   {
     perror("could not allocate memory");
-    exit(0);
+    return NULL;
   }
+  value->no_pattern_found_in_articles = 0;
   value->next = NULL;
   return value;
 }
+
+void set_pattern(value_alias_article_info* value, char* pattern)
+{
+
+  _strncpy(value->pattern, pattern, STRLEN);
+
+}
+
+void set_article_name(value_alias_article_info* value, char* name)
+{
+  _strncpy(value->article_name[value->no_pattern_found_in_articles], name, STRLEN);
+}
+
+void allocate_complete_line(value_alias_article_info* value)
+{
+  if(value->no_pattern_found_in_articles < MAX_NO_PATTERN_IN_ARTICLES)
+  {
+    value->complete_line[value->no_pattern_found_in_articles] = (char *) malloc(SEARCH_RESULT_STR_LEN);
+  }
+  else
+  {
+    printf(" Error: Too many patterns found. Overflow !!!!!!!");
+    return;
+  }
+}
+
+void set_complete_line(value_alias_article_info* value, char* line)
+{
+  static unsigned int offset = 0;
+  /* Memory Allocation*/
+  if(NULL == value->complete_line[value->no_pattern_found_in_articles])
+  {
+    allocate_complete_line(value);
+  }
+  
+  /*Set values*/
+  _strncpy(value->complete_line[value->no_pattern_found_in_articles], line, SEARCH_RESULT_STR_LEN);
+
+  printf("\n complete_line is %s\n", value->complete_line[value->no_pattern_found_in_articles]);
+}
+
 
 /* The words which are not entered into the hash table are ignore words.
    Tells whether the particular word should be ignored or not
@@ -123,7 +193,6 @@ value_alias_article_info* allocate_value()
 */
 unsigned short int is_ignore_word(char* word)
 {
-
   int i;
 
   for(i=0; i<NO_OF_IGNORE_WORDS; i++)
@@ -140,118 +209,91 @@ unsigned short int is_ignore_word(char* word)
 
 void insert_key(unsigned int key_info)
 {
-  key_alias_word_info* key = NULL;
-
-  if(NULL == key_head)
-  {
-    key = allocate_key();
-    key->key_info = key_info;
-    key->next = NULL;
-    key->value_info = NULL;
-    key_head = key;
-    printf("\n head key inserted successfully \n");
-    return;
-  }
-  /* insertion at beginning */
-  if(key_head->key_info > key_info )
-  {
-    key = allocate_key();
-    key->key_info = key_info;
-    key->next = key_head;
-    key_head = key;
-    printf("\n head key updated successfully \n");
-    return;
-  }
-  key_alias_word_info* prev = key_head;
-  key_alias_word_info* ptr = key_head;
-
-  while(ptr->key_info < key_info && ptr->next != NULL)
-  {
-    prev = ptr;
-    ptr = ptr->next;
-  } 
-  
-  if(ptr->key_info == key_info)
-  {
-    printf("key is already present");
-    return;
-  }
-  else if(ptr->key_info > key_info)
-  {
-    key = allocate_key();
-    prev->next = key;
-    key->next = ptr;
-    key->key_info = key_info;
-  }
-  else if(ptr->key_info < key_info) /* Insert in the last of the list */
-  {
-    key = allocate_key();
-    key->next = NULL;
-    ptr->next = key;
-    key->key_info = key_info;
-  }
-  printf("\n key inserted successfully \n");
+  set_key_head(key_info);
 }
 
 key_alias_word_info* find_key(int key_info)
 {
-  if(key_head ==  NULL)
+  if(INVALID_KEY_INFO != get_key_head(key_info))
   {
-    printf("\n key_head NULL \n");
+    return &key_head[key_info]; 
+  }
+  else
+  {
+    printf("\n key is not present  \n");
     return NULL;
   }
-  key_alias_word_info* ptr = key_head;
-  
+}
+
+value_alias_article_info* find_value(char* pattern, value_alias_article_info* value_head)
+{
+
+  value_alias_article_info* ptr = value_head;
+
   while(ptr != NULL)
   {
-    if(ptr->key_info == key_info)
+    if(0 == strncmp(ptr->pattern, pattern, STRLEN))
     {
       return ptr;
     }
     ptr = ptr->next;
   }
   return NULL;
-}
+} 
 
 void insert_value(value_alias_article_info* value)
 {
+
   unsigned int key_info = calculate_key(value->pattern);
   
   key_alias_word_info* found_key = find_key(key_info);
-  
-  if(found_key == NULL)
+
+  /* insert  Key since key not found */
+  if(NULL == found_key)
   {
-    key_info = calculate_key(value->pattern);
     insert_key(key_info);
     found_key = find_key(key_info);
   }
 
-  if(found_key == NULL)
-  {
-    perror(" there is some logical/lib error ");
-    exit(0);
-  }
   value_alias_article_info* ptr = found_key->value_info;
-
-  if(ptr == NULL)
+  
+  /* Insert At beginning */
+  if(NULL == ptr)
   {
     found_key->value_info = value;
     return;
   }
-  while(ptr->next != NULL)
+
+  value_alias_article_info* found_value = find_value(value->pattern, found_key->value_info);
+
+  /*If the pattern is not found, then travel till end of the list and insert it over there. */
+  if(NULL == found_value)
   {
-    ptr = ptr->next;
+    while(ptr->next != NULL)
+    {
+      ptr = ptr->next;
+    }
+    value->next =  NULL;
+    ptr->next = value;
   }
-  ptr->next = value;
-  value->next =  NULL;
+  else
+  {
+    /* The pattern exists already. Adding in the same list */
+    found_value->no_pattern_found_in_articles++;
+    set_article_name(found_value, value->article_name[0]);
+    set_complete_line(found_value, value->complete_line[0]);
+    /* Since value is found already. Copy the required fields and delete the value. */
+    free(value); 
+  }
 }
 
 /* Return true(1) if the key is found else false (0) */
-unsigned int find_value(char* pattern)
+unsigned int find_pattern(char* pattern)
 {
   unsigned int key_info = calculate_key(pattern);
   key_alias_word_info* found_key =  find_key(key_info);
   unsigned short int flag = 0;
+  int i;
 
   if(found_key == NULL)
   {
@@ -260,14 +302,18 @@ unsigned int find_value(char* pattern)
   else
   {
     value_alias_article_info* ptr = found_key->value_info;
-    while(ptr->next != NULL)
+    while(ptr)
     {
       if((strcasecmp (ptr->pattern, pattern)) == 0)
       {
         flag = 1;
-        printf("\nThe word found \n");
-        printf("\nArticle Name: %s \n", ptr->article_name);
-        printf("\nComplete Line: %s \n\n", ptr->complete_line);
+        printf("\nThe pattern found !!!!!!!!!!!! \n");
+        for(i=0; i<= ptr->no_pattern_found_in_articles; i++)
+        {
+          printf("pattern: %s\n", ptr->pattern);
+          printf("Article Name: %s \n", ptr->article_name[i]);
+          printf("Complete Line: %s \n\n", ptr->complete_line[i]);
+        }
       }
       ptr = ptr->next;
     }
@@ -280,15 +326,6 @@ unsigned int find_value(char* pattern)
   return 1;
 }
 
-void set_value(value_alias_article_info* value, char* word, char* article_name, char* complete_line)
-{
-  strncpy(value->pattern, word, STRLEN);
-  strncpy(value->article_name, article_name, STRLEN);
-  strncpy(value->complete_line, complete_line, SEARCH_RESULT_STR_LEN);
-  printf("\n complete_line is %s\n", complete_line);
-  printf("\n value->complete_line is %s\n", value->complete_line);
-}
-
 void create_key_value_pair(char* word, char* article_name, char* complete_line)
 {
 
@@ -296,10 +333,18 @@ void create_key_value_pair(char* word, char* article_name, char* complete_line)
 
   insert_key(key_info);
 
-  value_alias_article_info* value = allocate_value(); 
+  value_alias_article_info* value = allocate_value();
 
-  set_value(value, word, article_name, complete_line);
-  
+  if(NULL == value)
+  {
+    printf("\n memory Allocation failed \n");
+    return;
+  }
+  /*Set values*/
+  set_pattern(value, word);
+  set_article_name(value, article_name);
+  set_complete_line(value, complete_line);
+
   insert_value(value);
 
 }
@@ -314,6 +359,11 @@ void create_database()
   char* str = NULL;
 
   article* article_obj = get_article_obj();
+  if(NULL == article_obj)
+  {
+    printf("\n Null ptr received in article_obj");
+    return;
+  }
   for(i=0; i<no_of_articles; i++)
   {
     fp = open_file(article_obj[i].name, "r" );
@@ -321,7 +371,7 @@ void create_database()
     {
       if(*line == '\n')
         continue;
-      strncpy(save_line, line, MAX_STR_LEN);
+      _strncpy(save_line, line, MAX_STR_LEN);
       str = stringRemoveNonAlphaNum(line);
       str = strlwr(str);
       word = strtok(str, " ");
@@ -343,18 +393,22 @@ void create_database()
 
 void display_hash()
 {
-  key_alias_word_info* ptr = key_head;
-
-  while( ptr != NULL)
+  unsigned int count = 0;
+  
+  while( count < HASH_SIZE )
   {
-    printf("\n\nKey: %d", ptr->key_info);
-    printf("\nValues:\n");
-    value_alias_article_info* cur = ptr->value_info;
-    while(cur != NULL)
-    { 
-        printf("%s  ",cur->pattern);
-        cur = cur->next;
+  
+    if(INVALID_KEY_INFO != key_head[count].key_info)
+    {
+      printf("\n\nKey: %d", key_head[count].key_info);
+      printf("\nValues:\n");
+        value_alias_article_info* cur = key_head[count].value_info;
+        while(cur != NULL)
+        { 
+          printf("%s  ",cur->pattern);
+          cur = cur->next;
+        }
     }
-    ptr = ptr->next;
+    count++;
   }
 }

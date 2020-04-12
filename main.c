@@ -8,7 +8,7 @@ extern int no_of_articles;
 void input_pattern(char* pattern)
 {
 
-  printf("\nEnter the pattern \n");
+  printf("\n\nEnter the pattern \n");
   fgets(pattern, STRLEN, stdin);
 
   if ((strlen(pattern) > 0) && (pattern[strlen (pattern) - 1] == '\n'))
@@ -24,6 +24,9 @@ int main()
   char src[STRLEN] = {0};
   char display_buf[STRLEN] = {0};
   char* str = NULL;
+  char* word = NULL;
+
+  initialize_key_head();
 
   no_of_articles =  get_no_of_articles();
 
@@ -40,7 +43,14 @@ int main()
     input_pattern(pattern);
 
     str = strlwr(pattern);
-    find_value(str);
+
+    word = strtok(str, " ");
+    while(NULL != word)
+    {
+      find_pattern(word);
+      word = strtok(NULL, " ");
+    }   
+     
   }
 
   return 0;

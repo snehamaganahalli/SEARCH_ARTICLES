@@ -7,6 +7,19 @@
 #include "lib.h"
 #include "search.h"
 
+void _strncpy(char* dst, char*src, size_t size)
+{
+  if(dst!= NULL && src != NULL)
+  {
+    strncpy(dst,src,size);
+    dst[strlen(dst)+1] = '\0';
+  }
+  else
+  {
+    printf("Error: src: %p dst: %p", src, dst);
+  }
+}
+
 char* stringRemoveNonAlphaNum(char *str)
 {
     unsigned long i = 0;
